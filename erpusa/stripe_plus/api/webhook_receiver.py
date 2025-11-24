@@ -604,6 +604,9 @@ def create_payment_entry(merchant_payment):
 
         pe_doc = pr_doc.create_payment_entry(submit=False)
         
+        # get currency from Stripe Transaction
+        stripe_transaction_currency = frappe.db.get_value("Stripe Transaction", merchant_payment.source, "currency")
+        
         # sets the actual amount paid by the user
         for index, reference in enumerate(pe_doc.references):
             if reference.reference_name == pr_doc.reference_name:
@@ -612,6 +615,11 @@ def create_payment_entry(merchant_payment):
         pe_doc.payment_method = frappe.get_value("Payment Request", merchant_payment.associated_payment_request, "mode_of_payment") 
         pe_doc.reference_no = frappe.get_value("Stripe Transaction", merchant_payment.source, "payment_intent")
         pe_doc.paid_amount = merchant_payment.net_amount
+        
+        # set dynamic currency from Stripe Transaction
+        if stripe_transaction_currency:
+            pe_doc.paid_to_account_currency = stripe_transaction_currency
+            pe_doc.paid_from_account_currency = stripe_transaction_currency
 
         # apply Merchant Payment as deduction
         pe_doc.append("deductions", {
