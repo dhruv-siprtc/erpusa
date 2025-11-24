@@ -100,11 +100,20 @@ frappe.ready(function() {
     setLoading(true);
     
   
+    // Build return URL with properly encoded query parameters
+    const baseUrl = "{{ frappe.utils.get_url() }}/stripe_plus_return";
+    const returnUrl = new URL(baseUrl);
+    returnUrl.searchParams.set("reference_docname", "{{ reference_docname }}");
+    returnUrl.searchParams.set("gateway_controller", "{{ gateway_controller }}");
+    returnUrl.searchParams.set("to_pay_id", "{{ to_pay_id }}");
+    returnUrl.searchParams.set("to_pay_doctype", "{{ to_pay_doctype }}");
+    returnUrl.searchParams.set("amount", "{{ amount }}");
+    
     const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
         // Make sure to change this to your payment completion page
-        return_url: "{{ frappe.utils.get_url() }}/stripe_plus_return?reference_docname={{ reference_docname }}&gateway_controller={{ gateway_controller }}&to_pay_id={{ to_pay_id }}&to_pay_doctype={{ to_pay_doctype }}&amount={{ amount }}",
+        return_url: returnUrl.toString(),
         payment_method_data: {
           billing_details: {
             name: "{{ payer_name }}"

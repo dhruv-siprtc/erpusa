@@ -96,7 +96,7 @@ def create_payment_intent(data, customer_id=None):
     try:
         intent = stripe.PaymentIntent.create(
             amount=amount_in_int,
-            currency='usd',
+            currency='gbp',
             customer=customer_id,
             payment_method_configuration=data.get('pm_configuration', None),
             metadata={
