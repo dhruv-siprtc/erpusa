@@ -606,6 +606,10 @@ def create_payment_entry(merchant_payment):
         
         # get currency from Stripe Transaction
         stripe_transaction_currency = frappe.db.get_value("Stripe Transaction", merchant_payment.source, "currency")
+        frappe.log_error(
+            f"Retrieved currency from Stripe Transaction {merchant_payment.source}: {stripe_transaction_currency}",
+            "Payment Entry Currency Retrieval"
+        )
         
         # sets the actual amount paid by the user
         for index, reference in enumerate(pe_doc.references):
@@ -620,6 +624,15 @@ def create_payment_entry(merchant_payment):
         if stripe_transaction_currency:
             pe_doc.paid_to_account_currency = stripe_transaction_currency
             pe_doc.paid_from_account_currency = stripe_transaction_currency
+            frappe.log_error(
+                f"Set Payment Entry currency to {stripe_transaction_currency} for Payment Entry {pe_doc.name or 'new'} (Merchant Payment: {merchant_payment.name})",
+                "Payment Entry Currency Set"
+            )
+        else:
+            frappe.log_error(
+                f"Currency not found for Stripe Transaction {merchant_payment.source}. Payment Entry will use default currency. (Merchant Payment: {merchant_payment.name})",
+                "Payment Entry Currency Warning"
+            )
 
         # apply Merchant Payment as deduction
         pe_doc.append("deductions", {
