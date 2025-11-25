@@ -604,13 +604,6 @@ def create_payment_entry(merchant_payment):
 
         pe_doc = pr_doc.create_payment_entry(submit=False)
         
-        # get currency from Stripe Transaction
-        stripe_transaction_currency = frappe.db.get_value("Stripe Transaction", merchant_payment.source, "currency")
-        frappe.log_error(
-            f"Retrieved currency from Stripe Transaction {merchant_payment.source}: {stripe_transaction_currency}",
-            "Payment Entry Currency Retrieval"
-        )
-        
         # sets the actual amount paid by the user
         for index, reference in enumerate(pe_doc.references):
             if reference.reference_name == pr_doc.reference_name:
@@ -620,18 +613,14 @@ def create_payment_entry(merchant_payment):
         pe_doc.reference_no = frappe.get_value("Stripe Transaction", merchant_payment.source, "payment_intent")
         pe_doc.paid_amount = merchant_payment.net_amount
         
-        # set dynamic currency from Stripe Transaction
+        # get currency from Stripe Transaction and set it dynamically
+        stripe_transaction_currency = frappe.db.get_value("Stripe Transaction", merchant_payment.source, "currency")
         if stripe_transaction_currency:
             pe_doc.paid_to_account_currency = stripe_transaction_currency
             pe_doc.paid_from_account_currency = stripe_transaction_currency
             frappe.log_error(
-                f"Set Payment Entry currency to {stripe_transaction_currency} for Payment Entry {pe_doc.name or 'new'} (Merchant Payment: {merchant_payment.name})",
+                f"Set Payment Entry currency to {stripe_transaction_currency} (Merchant Payment: {merchant_payment.name})",
                 "Payment Entry Currency Set"
-            )
-        else:
-            frappe.log_error(
-                f"Currency not found for Stripe Transaction {merchant_payment.source}. Payment Entry will use default currency. (Merchant Payment: {merchant_payment.name})",
-                "Payment Entry Currency Warning"
             )
 
         # apply Merchant Payment as deduction
@@ -646,27 +635,50 @@ def create_payment_entry(merchant_payment):
         if get_bank_account_for_payment_entry(pe_doc.payment_type, pe_doc.paid_from, pe_doc.paid_to, False, as_dict=False):
             pe_doc.bank_account = get_bank_account_for_payment_entry(pe_doc.payment_type, pe_doc.paid_from, pe_doc.paid_to, False, as_dict=False)
 
+        pe_doc_saved = False
         try:
             pe_doc.save(ignore_permissions=True)
+            pe_doc_saved = True
+            frappe.log_error(
+                f"Successfully saved Payment Entry {pe_doc.name} (Merchant Payment: {merchant_payment.name})",
+                "Payment Entry Save Success"
+            )
 
         except Exception as e:
-            frappe.log_error(frappe.get_traceback(), _("Error Saving Payment Entry Document"))
+            error_message = f"Error Saving Payment Entry Document: {str(e)}\nPayment Entry Details: name={pe_doc.name or 'new'}, paid_to={pe_doc.paid_to}, paid_from={pe_doc.paid_from}, paid_to_account_currency={getattr(pe_doc, 'paid_to_account_currency', 'N/A')}, paid_from_account_currency={getattr(pe_doc, 'paid_from_account_currency', 'N/A')}, stripe_currency={stripe_transaction_currency}\nTraceback: {frappe.get_traceback()}"
+            frappe.log_error(error_message, _("Error Saving Payment Entry Document"))
         
-        # update Merchant Payment doc
-        try:
-            merchant_payment.associated_payment_entry = pe_doc.name
-            merchant_payment.save()
-
-        except Exception as e:
-            frappe.log_error(frappe.get_traceback(), _("Error Saving Merchant Payment Document"))
-            
-        # submit Payment Entry doc according to settings
-        if frappe.db.get_single_value("Stripe Plus Settings", "auto_submit_payment"):
+        # update Merchant Payment doc only if Payment Entry was saved successfully
+        if pe_doc_saved:
             try:
-                pe_doc.submit() 
+                merchant_payment.associated_payment_entry = pe_doc.name
+                merchant_payment.save()
+                frappe.log_error(
+                    f"Successfully updated Merchant Payment {merchant_payment.name} with Payment Entry {pe_doc.name}",
+                    "Merchant Payment Update Success"
+                )
 
             except Exception as e:
-                frappe.log_error(frappe.get_traceback(), _("Error Submitting Payment Entry Document"))
+                error_message = f"Error Saving Merchant Payment Document: {str(e)}\nMerchant Payment: {merchant_payment.name}, Payment Entry: {pe_doc.name}\nTraceback: {frappe.get_traceback()}"
+                frappe.log_error(error_message, _("Error Saving Merchant Payment Document"))
+        else:
+            frappe.log_error(
+                f"Skipping Merchant Payment update because Payment Entry save failed (Merchant Payment: {merchant_payment.name})",
+                "Merchant Payment Update Skipped"
+            )
+            
+        # submit Payment Entry doc according to settings (only if save was successful)
+        if pe_doc_saved and frappe.db.get_single_value("Stripe Plus Settings", "auto_submit_payment"):
+            try:
+                pe_doc.submit()
+                frappe.log_error(
+                    f"Successfully submitted Payment Entry {pe_doc.name} (Merchant Payment: {merchant_payment.name})",
+                    "Payment Entry Submit Success"
+                )
+
+            except Exception as e:
+                error_message = f"Error Submitting Payment Entry Document: {str(e)}\nPayment Entry: {pe_doc.name}, Merchant Payment: {merchant_payment.name}\nTraceback: {frappe.get_traceback()}"
+                frappe.log_error(error_message, _("Error Submitting Payment Entry Document"))
              
 def create_journal_entry(payout, sources=None, stripe_fees=None):
     user_to_authorize = frappe.db.get_single_value("Stripe Plus Settings", "user_to_authorize")
