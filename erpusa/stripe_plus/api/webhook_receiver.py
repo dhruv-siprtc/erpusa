@@ -646,29 +646,27 @@ def create_payment_entry(merchant_payment):
                     )
                     
                     frappe.log_error(
-                        f"Set Payment Entry currency to {stripe_transaction_currency} with source_exchange_rate {source_exchange_rate} ({company_currency} to {stripe_transaction_currency}), conversion_rate {exchange_rate} ({stripe_transaction_currency} to {company_currency}) (Merchant Payment: {merchant_payment.name})",
-                        "Payment Entry Currency Set"
+                        f"Currency: {stripe_transaction_currency}\nSource Exchange Rate: {source_exchange_rate} ({company_currency} to {stripe_transaction_currency})\nConversion Rate: {exchange_rate} ({stripe_transaction_currency} to {company_currency})\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}",
+                        "PE Currency Set"
                     )
                 else:
                     # Same currency, exchange rate is 1
                     pe_doc.source_exchange_rate = 1.0
                     exchange_rate = 1.0
                     frappe.log_error(
-                        f"Set Payment Entry currency to {stripe_transaction_currency} (same as company currency, exchange rate: 1.0) (Merchant Payment: {merchant_payment.name})",
-                        "Payment Entry Currency Set"
+                        f"Currency: {stripe_transaction_currency} (same as company currency)\nExchange Rate: 1.0\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}",
+                        "PE Currency Set"
                     )
             except Exception as e:
                 # If exchange rate fetch fails, set to 1.0 as fallback
                 pe_doc.source_exchange_rate = 1.0
                 exchange_rate = 1.0
-                frappe.log_error(
-                    f"Error getting exchange rate for {stripe_transaction_currency}: {str(e)}. Set exchange rate to 1.0 as fallback (Merchant Payment: {merchant_payment.name})",
-                    "Payment Entry Exchange Rate Error"
-                )
+                error_details = f"Error getting exchange rate for {stripe_transaction_currency}\nError: {str(e)}\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}\nCompany Currency: {company_currency}\nTransaction Currency: {stripe_transaction_currency}\nSetting exchange rate to 1.0 as fallback\nTraceback: {frappe.get_traceback()}"
+                frappe.log_error(error_details, "PE Exchange Rate Error")
         else:
             frappe.log_error(
-                f"Currency not found for Stripe Transaction {merchant_payment.source} (Merchant Payment: {merchant_payment.name})",
-                "Payment Entry Currency Warning"
+                f"Currency not found for Stripe Transaction\nSource: {merchant_payment.source}\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}",
+                "PE Currency Warning"
             )
 
         # apply Merchant Payment as deduction (convert amount to company currency)
@@ -695,8 +693,8 @@ def create_payment_entry(merchant_payment):
             pe_doc.save(ignore_permissions=True)
             pe_doc_saved = True
             frappe.log_error(
-                f"Successfully saved Payment Entry {pe_doc.name} (Merchant Payment: {merchant_payment.name})",
-                "Payment Entry Save Success"
+                f"Successfully saved Payment Entry\nPayment Entry: {pe_doc.name}\nMerchant Payment: {merchant_payment.name}\nCurrency: {stripe_transaction_currency or 'N/A'}\nPaid Amount: {pe_doc.paid_amount}",
+                "PE Save Success"
             )
 
         except Exception as e:
@@ -709,8 +707,8 @@ def create_payment_entry(merchant_payment):
                 merchant_payment.associated_payment_entry = pe_doc.name
                 merchant_payment.save()
                 frappe.log_error(
-                    f"Successfully updated Merchant Payment {merchant_payment.name} with Payment Entry {pe_doc.name}",
-                    "Merchant Payment Update Success"
+                    f"Successfully updated Merchant Payment\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name}\nAssociated Payment Entry field updated",
+                    "MP Update Success"
                 )
 
             except Exception as e:
@@ -718,8 +716,8 @@ def create_payment_entry(merchant_payment):
                 frappe.log_error(error_message, _("Error Saving Merchant Payment Document"))
         else:
             frappe.log_error(
-                f"Skipping Merchant Payment update because Payment Entry save failed (Merchant Payment: {merchant_payment.name})",
-                "Merchant Payment Update Skipped"
+                f"Skipping Merchant Payment update because Payment Entry save failed\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}\nReason: Payment Entry save was unsuccessful",
+                "MP Update Skipped"
             )
             
         # submit Payment Entry doc according to settings (only if save was successful)
@@ -727,8 +725,8 @@ def create_payment_entry(merchant_payment):
             try:
                 pe_doc.submit()
                 frappe.log_error(
-                    f"Successfully submitted Payment Entry {pe_doc.name} (Merchant Payment: {merchant_payment.name})",
-                    "Payment Entry Submit Success"
+                    f"Successfully submitted Payment Entry\nPayment Entry: {pe_doc.name}\nMerchant Payment: {merchant_payment.name}\nStatus: Submitted",
+                    "PE Submit Success"
                 )
 
             except Exception as e:
