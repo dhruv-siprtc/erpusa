@@ -616,15 +616,16 @@ def create_payment_entry(merchant_payment):
         
         # get currency from Stripe Transaction and set it dynamically
         stripe_transaction_currency = frappe.db.get_value("Stripe Transaction", merchant_payment.source, "currency")
+        company = pe_doc.company
+        company_currency = frappe.db.get_value("Company", company, "default_currency")
+        exchange_rate = 1.0
+        
         if stripe_transaction_currency:
             pe_doc.paid_to_account_currency = stripe_transaction_currency
             pe_doc.paid_from_account_currency = stripe_transaction_currency
             
             # get and set exchange rate
             try:
-                company = pe_doc.company
-                company_currency = frappe.db.get_value("Company", company, "default_currency")
-                
                 if company_currency and company_currency != stripe_transaction_currency:
                     # Get exchange rate from company currency to transaction currency
                     exchange_rate = get_exchange_rate(
@@ -641,6 +642,7 @@ def create_payment_entry(merchant_payment):
                 else:
                     # Same currency, exchange rate is 1
                     pe_doc.source_exchange_rate = 1.0
+                    exchange_rate = 1.0
                     frappe.log_error(
                         f"Set Payment Entry currency to {stripe_transaction_currency} (same as company currency, exchange rate: 1.0) (Merchant Payment: {merchant_payment.name})",
                         "Payment Entry Currency Set"
@@ -648,6 +650,7 @@ def create_payment_entry(merchant_payment):
             except Exception as e:
                 # If exchange rate fetch fails, set to 1.0 as fallback
                 pe_doc.source_exchange_rate = 1.0
+                exchange_rate = 1.0
                 frappe.log_error(
                     f"Error getting exchange rate for {stripe_transaction_currency}: {str(e)}. Set exchange rate to 1.0 as fallback (Merchant Payment: {merchant_payment.name})",
                     "Payment Entry Exchange Rate Error"
@@ -658,11 +661,18 @@ def create_payment_entry(merchant_payment):
                 "Payment Entry Currency Warning"
             )
 
-        # apply Merchant Payment as deduction
+        # apply Merchant Payment as deduction (convert amount to company currency)
+        # Convert merchant fee from transaction currency to company currency
+        # exchange_rate is from company currency to transaction currency, so divide to convert back
+        if exchange_rate and exchange_rate != 0:
+            merchant_fee_in_company_currency = flt(merchant_payment.merchant_fee) / flt(exchange_rate)
+        else:
+            merchant_fee_in_company_currency = flt(merchant_payment.merchant_fee)
+        
         pe_doc.append("deductions", {
             "account": frappe.db.get_single_value("Stripe Plus Settings", "merchant_fee_account"),
             "cost_center": cost_center,
-            "amount": merchant_payment.merchant_fee,
+            "amount": merchant_fee_in_company_currency,
             "description": merchant_payment.name,
         })
         
