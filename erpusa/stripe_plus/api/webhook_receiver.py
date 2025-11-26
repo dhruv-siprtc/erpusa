@@ -627,17 +627,8 @@ def create_payment_entry(merchant_payment):
             # get and set exchange rate
             try:
                 if company_currency and company_currency != stripe_transaction_currency:
-                    # Get exchange rate from company currency to transaction currency (for Payment Entry)
-                    source_exchange_rate = get_exchange_rate(
-                        company_currency,
-                        stripe_transaction_currency,
-                        pe_doc.posting_date or today(),
-                        "for_buying"
-                    )
-                    pe_doc.source_exchange_rate = flt(source_exchange_rate)
-                    
-                    # Get inverse exchange rate for converting transaction currency amounts to company currency
-                    # This is the rate from transaction currency to company currency
+                    # Get exchange rate from transaction currency to company currency
+                    # This is the rate we'll use for source_exchange_rate (inverted) and for converting amounts
                     exchange_rate = get_exchange_rate(
                         stripe_transaction_currency,
                         company_currency,
@@ -645,8 +636,13 @@ def create_payment_entry(merchant_payment):
                         "for_buying"
                     )
                     
+                    # source_exchange_rate should be from company currency to transaction currency
+                    # So we invert the rate: if 1 GBP = 1.32 USD, then 1 USD = 1/1.32 = 0.76 GBP
+                    source_exchange_rate = 1.0 / flt(exchange_rate) if exchange_rate and exchange_rate != 0 else 1.0
+                    pe_doc.source_exchange_rate = flt(source_exchange_rate)
+                    
                     frappe.log_error(
-                        f"Currency: {stripe_transaction_currency}\nSource Exchange Rate: {source_exchange_rate} ({company_currency} to {stripe_transaction_currency})\nConversion Rate: {exchange_rate} ({stripe_transaction_currency} to {company_currency})\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}",
+                        f"Currency: {stripe_transaction_currency}\nExchange Rate (Transaction to Company): {exchange_rate}\nSource Exchange Rate (Company to Transaction): {source_exchange_rate}\nCompany Currency: {company_currency}\nTransaction Currency: {stripe_transaction_currency}\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}",
                         "PE Currency Set"
                     )
                 else:
