@@ -4,9 +4,10 @@ import frappe
 import stripe
 from decimal import Decimal
 from frappe import _
-from frappe.utils import fmt_money, get_url_to_form, today, now, split_emails
+from frappe.utils import fmt_money, get_url_to_form, today, now, split_emails, flt
 from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 from frappe.utils import now_datetime, add_to_date
+from erpnext.setup.utils import get_exchange_rate
 from erpusa.stripe_plus.doctype.stripe_plus_settings.stripe_plus_settings import get_bank_account_for_payment_entry
 from erpusa.stripe_plus.api.webhook_receiver_subscription import receive_stripe_subscription_events
 
@@ -618,9 +619,43 @@ def create_payment_entry(merchant_payment):
         if stripe_transaction_currency:
             pe_doc.paid_to_account_currency = stripe_transaction_currency
             pe_doc.paid_from_account_currency = stripe_transaction_currency
+            
+            # get and set exchange rate
+            try:
+                company = pe_doc.company
+                company_currency = frappe.db.get_value("Company", company, "default_currency")
+                
+                if company_currency and company_currency != stripe_transaction_currency:
+                    # Get exchange rate from company currency to transaction currency
+                    exchange_rate = get_exchange_rate(
+                        company_currency,
+                        stripe_transaction_currency,
+                        pe_doc.posting_date or today(),
+                        "for_buying"
+                    )
+                    pe_doc.source_exchange_rate = flt(exchange_rate)
+                    frappe.log_error(
+                        f"Set Payment Entry currency to {stripe_transaction_currency} with exchange rate {exchange_rate} ({company_currency} to {stripe_transaction_currency}) (Merchant Payment: {merchant_payment.name})",
+                        "Payment Entry Currency Set"
+                    )
+                else:
+                    # Same currency, exchange rate is 1
+                    pe_doc.source_exchange_rate = 1.0
+                    frappe.log_error(
+                        f"Set Payment Entry currency to {stripe_transaction_currency} (same as company currency, exchange rate: 1.0) (Merchant Payment: {merchant_payment.name})",
+                        "Payment Entry Currency Set"
+                    )
+            except Exception as e:
+                # If exchange rate fetch fails, set to 1.0 as fallback
+                pe_doc.source_exchange_rate = 1.0
+                frappe.log_error(
+                    f"Error getting exchange rate for {stripe_transaction_currency}: {str(e)}. Set exchange rate to 1.0 as fallback (Merchant Payment: {merchant_payment.name})",
+                    "Payment Entry Exchange Rate Error"
+                )
+        else:
             frappe.log_error(
-                f"Set Payment Entry currency to {stripe_transaction_currency} (Merchant Payment: {merchant_payment.name})",
-                "Payment Entry Currency Set"
+                f"Currency not found for Stripe Transaction {merchant_payment.source} (Merchant Payment: {merchant_payment.name})",
+                "Payment Entry Currency Warning"
             )
 
         # apply Merchant Payment as deduction
