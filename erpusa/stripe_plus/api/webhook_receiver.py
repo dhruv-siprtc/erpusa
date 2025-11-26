@@ -627,16 +627,26 @@ def create_payment_entry(merchant_payment):
             # get and set exchange rate
             try:
                 if company_currency and company_currency != stripe_transaction_currency:
-                    # Get exchange rate from company currency to transaction currency
-                    exchange_rate = get_exchange_rate(
+                    # Get exchange rate from company currency to transaction currency (for Payment Entry)
+                    source_exchange_rate = get_exchange_rate(
                         company_currency,
                         stripe_transaction_currency,
                         pe_doc.posting_date or today(),
                         "for_buying"
                     )
-                    pe_doc.source_exchange_rate = flt(exchange_rate)
+                    pe_doc.source_exchange_rate = flt(source_exchange_rate)
+                    
+                    # Get inverse exchange rate for converting transaction currency amounts to company currency
+                    # This is the rate from transaction currency to company currency
+                    exchange_rate = get_exchange_rate(
+                        stripe_transaction_currency,
+                        company_currency,
+                        pe_doc.posting_date or today(),
+                        "for_buying"
+                    )
+                    
                     frappe.log_error(
-                        f"Set Payment Entry currency to {stripe_transaction_currency} with exchange rate {exchange_rate} ({company_currency} to {stripe_transaction_currency}) (Merchant Payment: {merchant_payment.name})",
+                        f"Set Payment Entry currency to {stripe_transaction_currency} with source_exchange_rate {source_exchange_rate} ({company_currency} to {stripe_transaction_currency}), conversion_rate {exchange_rate} ({stripe_transaction_currency} to {company_currency}) (Merchant Payment: {merchant_payment.name})",
                         "Payment Entry Currency Set"
                     )
                 else:
@@ -663,9 +673,9 @@ def create_payment_entry(merchant_payment):
 
         # apply Merchant Payment as deduction (convert amount to company currency)
         # Convert merchant fee from transaction currency to company currency
-        # exchange_rate is from company currency to transaction currency, so divide to convert back
+        # exchange_rate is from transaction currency to company currency, so multiply to convert
         if exchange_rate and exchange_rate != 0:
-            merchant_fee_in_company_currency = flt(merchant_payment.merchant_fee) / flt(exchange_rate)
+            merchant_fee_in_company_currency = flt(merchant_payment.merchant_fee) * flt(exchange_rate)
         else:
             merchant_fee_in_company_currency = flt(merchant_payment.merchant_fee)
         
