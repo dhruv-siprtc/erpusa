@@ -656,7 +656,12 @@ def create_payment_entry(merchant_payment):
                 f"Currency not found for Stripe Transaction\nSource: {merchant_payment.source}\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}",
                 "PE Currency Warning"
             )
-
+        # set the source exchange rate
+        pe_doc.source_exchange_rate = exchange_rate
+        frappe.log_error(
+            f"Source Exchange Rate: {exchange_rate}\nMerchant Payment: {merchant_payment.name}\nPayment Entry: {pe_doc.name or 'new'}",
+            "PE Source Exchange Rate Set"
+        )
         # apply Merchant Payment as deduction (convert amount to company currency)
         # Convert merchant fee from transaction currency to company currency
         # exchange_rate is from transaction currency to company currency, so multiply to convert
